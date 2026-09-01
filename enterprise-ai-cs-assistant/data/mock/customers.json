@@ -1,0 +1,5 @@
+[
+  {"customer_id": "cust_001", "plan": "starter", "status": "active"},
+  {"customer_id": "cust_002", "plan": "pro", "status": "active"},
+  {"customer_id": "cust_003", "plan": "starter", "status": "past_due"}
+]

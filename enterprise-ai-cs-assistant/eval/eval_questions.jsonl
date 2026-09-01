@@ -1,0 +1,3 @@
+{"question": "What plans do you offer?", "expected_type": "answerable"}
+{"question": "Can I get a refund for last month?", "expected_type": "escalate"}
+{"question": "What is the capital of France?", "expected_type": "refuse"}
