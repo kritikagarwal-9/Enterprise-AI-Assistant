@@ -1,8 +1,9 @@
-"""API tests for health and authenticated /ask. LLM is faked; no live Groq calls."""
+"""API tests for health and authenticated /ask. LLM and RAG are faked."""
 
 import pytest
 from fastapi.testclient import TestClient
 
+from app.api.routes import NO_CONTEXT_INSTRUCTION
 from app.core.config import settings
 from app.llm.base import LLMError
 from app.llm.factory import get_llm_client
@@ -18,12 +19,26 @@ class FakeLLM:
         return "fake answer"
 
 
+class RecordingLLM:
+    def __init__(self) -> None:
+        self.messages: list[dict[str, str]] | None = None
+
+    def complete(self, messages: list[dict[str, str]]) -> str:
+        self.messages = messages
+        return "grounded answer"
+
+
 @pytest.fixture(autouse=True)
 def set_api_auth_key() -> None:
     original = settings.api_auth_key
     settings.api_auth_key = TEST_API_KEY
     yield
     settings.api_auth_key = original
+
+
+@pytest.fixture(autouse=True)
+def mock_retrieve(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("app.api.routes.retrieve", lambda question, **kwargs: [])
 
 
 @pytest.fixture
@@ -99,3 +114,61 @@ def test_ask_when_llm_upstream_fails_returns_502() -> None:
         app.dependency_overrides.pop(get_llm_client, None)
     assert response.status_code == 502
     assert response.json()["detail"] == "Upstream LLM failed"
+
+
+def test_ask_passes_retrieved_context_to_llm(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    hits = [
+        {"text": "Starter is $29 per month.", "source": "plans.md", "distance": 0.1},
+        {"text": "Pro includes 25 seats.", "source": "plans.md", "distance": 0.2},
+        {"text": "Boards hold tasks.", "source": "product-overview.md", "distance": 0.3},
+    ]
+    monkeypatch.setattr("app.api.routes.retrieve", lambda question, **kwargs: hits)
+    recorder = RecordingLLM()
+    app.dependency_overrides[get_llm_client] = lambda: recorder
+    try:
+        response = client.post(
+            "/ask",
+            json={"question": "What plans do you offer?"},
+            headers={"X-API-Key": TEST_API_KEY},
+        )
+    finally:
+        app.dependency_overrides.pop(get_llm_client, None)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["answer"] == "grounded answer"
+    assert body["sources"] == ["plans.md", "product-overview.md"]
+    assert recorder.messages is not None
+    user_content = recorder.messages[1]["content"]
+    assert "Starter is $29 per month." in user_content
+    assert "Pro includes 25 seats." in user_content
+    assert "What plans do you offer?" in user_content
+    assert "plans.md" in user_content
+    assert NO_CONTEXT_INSTRUCTION not in user_content
+
+
+def test_ask_with_no_retrieval_results_still_calls_llm(
+    fake_llm: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    recorder = RecordingLLM()
+    monkeypatch.setattr("app.api.routes.retrieve", lambda question, **kwargs: [])
+    app.dependency_overrides[get_llm_client] = lambda: recorder
+    try:
+        response = client.post(
+            "/ask",
+            json={"question": "What is the capital of France?"},
+            headers={"X-API-Key": TEST_API_KEY},
+        )
+    finally:
+        app.dependency_overrides.pop(get_llm_client, None)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["sources"] == []
+    assert body["action"] == "answer"
+    assert recorder.messages is not None
+    assert NO_CONTEXT_INSTRUCTION in recorder.messages[1]["content"]
+    assert "What is the capital of France?" in recorder.messages[1]["content"]
