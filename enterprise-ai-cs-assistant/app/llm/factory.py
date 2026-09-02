@@ -9,7 +9,7 @@ PROVIDER_BASE_URLS = {
     "openai": "https://api.openai.com/v1",
 }
 
-DEFAULT_MODEL = "llama-3.1-8b-instant"
+DEFAULT_MODEL = "openai/gpt-oss-20b"
 
 
 def get_llm_client() -> LLMClient:

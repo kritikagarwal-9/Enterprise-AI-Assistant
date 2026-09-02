@@ -12,7 +12,7 @@ class Settings(BaseSettings):
 
     llm_api_key: str = ""
     llm_provider: str = "groq"
-    llm_model: str = "llama-3.1-8b-instant"
+    llm_model: str = "openai/gpt-oss-20b"
     llm_base_url: str = ""
     api_auth_key: str = ""
     chroma_path: str = "chroma_db"
