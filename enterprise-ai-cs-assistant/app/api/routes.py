@@ -1,11 +1,20 @@
-"""POST /ask endpoint. Checks API key, calls the agent, returns the answer."""
+"""POST /ask endpoint. Checks API key, calls the LLM, returns the answer."""
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
 from app.auth.security import require_api_key
+from app.llm.base import LLMClient
+from app.llm.factory import get_llm_client
 
 router = APIRouter()
+
+SYSTEM_PROMPT = (
+    "You are an internal Customer Success assistant for CloudBoard, a B2B SaaS "
+    "project-management product. Be concise and professional. Do not invent "
+    "account data, refunds, contract terms, or tool results. This turn has no "
+    "retrieved documents and no account lookup."
+)
 
 
 class AskRequest(BaseModel):
@@ -21,9 +30,13 @@ class AskResponse(BaseModel):
 
 
 @router.post("/ask", response_model=AskResponse, dependencies=[Depends(require_api_key)])
-def ask(payload: AskRequest) -> AskResponse:
-    # Agent / RAG / tools are wired in later milestones.
-    return AskResponse(
-        answer="Stub response. The assistant is not implemented yet.",
-        action="stub",
-    )
+def ask(
+    payload: AskRequest,
+    llm: LLMClient = Depends(get_llm_client),
+) -> AskResponse:
+    messages = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": payload.question},
+    ]
+    answer = llm.complete(messages)
+    return AskResponse(answer=answer, action="answer")
