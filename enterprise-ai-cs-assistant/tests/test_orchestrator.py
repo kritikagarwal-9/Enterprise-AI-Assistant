@@ -43,7 +43,7 @@ def _final(text: str) -> dict[str, Any]:
 
 @pytest.fixture(autouse=True)
 def no_retrieval(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(orchestrator, "retrieve", lambda question: [])
+    monkeypatch.setattr(orchestrator, "retrieve", lambda question, n_results=4: [])
 
 
 def test_plain_question_answers_without_tools() -> None:

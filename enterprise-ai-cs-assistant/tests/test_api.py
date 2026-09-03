@@ -47,7 +47,7 @@ def set_api_auth_key() -> None:
 
 @pytest.fixture(autouse=True)
 def mock_retrieve(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("app.agent.orchestrator.retrieve", lambda question: [])
+    monkeypatch.setattr("app.agent.orchestrator.retrieve", lambda question, n_results=4: [])
 
 
 @pytest.fixture
@@ -129,7 +129,7 @@ def test_ask_passes_retrieved_context_to_llm(
         {"text": "Pro includes 25 seats.", "source": "plans.md", "distance": 0.2},
         {"text": "Boards hold tasks.", "source": "product-overview.md", "distance": 0.3},
     ]
-    monkeypatch.setattr("app.agent.orchestrator.retrieve", lambda question: hits)
+    monkeypatch.setattr("app.agent.orchestrator.retrieve", lambda question, n_results=4: hits,)
 
     class RecordingLLM:
         def __init__(self) -> None:
