@@ -1,9 +1,14 @@
-"""API tests for health and authenticated /ask. LLM and RAG are faked."""
+"""API tests for health and authenticated /ask. LLM and RAG are faked.
+
+These test the HTTP layer end to end (auth, error mapping, request/response
+shape). The orchestrator's own decision logic (tool calling, escalation,
+refusal) is covered in tests/test_orchestrator.py, so the fakes here just
+need to exercise a plain answer, a failure, and an unconfigured LLM.
+"""
 
 import pytest
 from fastapi.testclient import TestClient
 
-from app.api.routes import NO_CONTEXT_INSTRUCTION
 from app.core.config import settings
 from app.llm.base import LLMError
 from app.llm.factory import get_llm_client
@@ -15,17 +20,21 @@ TEST_API_KEY = "test-local-api-key"
 
 
 class FakeLLM:
-    def complete(self, messages: list[dict[str, str]]) -> str:
-        return "fake answer"
+    """No tool calls, just a direct final answer."""
+
+    def complete(self, messages: list[dict[str, str]]) -> str:  # pragma: no cover
+        raise AssertionError("orchestrator should use complete_with_tools")
+
+    def complete_with_tools(self, messages, tools) -> dict:
+        return {"role": "assistant", "content": "fake answer", "tool_calls": []}
 
 
-class RecordingLLM:
-    def __init__(self) -> None:
-        self.messages: list[dict[str, str]] | None = None
+class FailingLLM:
+    def complete(self, messages: list[dict[str, str]]) -> str:  # pragma: no cover
+        raise AssertionError("orchestrator should use complete_with_tools")
 
-    def complete(self, messages: list[dict[str, str]]) -> str:
-        self.messages = messages
-        return "grounded answer"
+    def complete_with_tools(self, messages, tools) -> dict:
+        raise LLMError("upstream")
 
 
 @pytest.fixture(autouse=True)
@@ -38,11 +47,11 @@ def set_api_auth_key() -> None:
 
 @pytest.fixture(autouse=True)
 def mock_retrieve(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("app.api.routes.retrieve", lambda question, **kwargs: [])
+    monkeypatch.setattr("app.agent.orchestrator.retrieve", lambda question: [])
 
 
 @pytest.fixture
-def fake_llm() -> None:
+def fake_llm():
     app.dependency_overrides[get_llm_client] = lambda: FakeLLM()
     yield
     app.dependency_overrides.pop(get_llm_client, None)
@@ -99,10 +108,6 @@ def test_ask_when_llm_not_configured_returns_503() -> None:
 
 
 def test_ask_when_llm_upstream_fails_returns_502() -> None:
-    class FailingLLM:
-        def complete(self, messages: list[dict[str, str]]) -> str:
-            raise LLMError("upstream")
-
     app.dependency_overrides[get_llm_client] = lambda: FailingLLM()
     try:
         response = client.post(
@@ -124,7 +129,19 @@ def test_ask_passes_retrieved_context_to_llm(
         {"text": "Pro includes 25 seats.", "source": "plans.md", "distance": 0.2},
         {"text": "Boards hold tasks.", "source": "product-overview.md", "distance": 0.3},
     ]
-    monkeypatch.setattr("app.api.routes.retrieve", lambda question, **kwargs: hits)
+    monkeypatch.setattr("app.agent.orchestrator.retrieve", lambda question: hits)
+
+    class RecordingLLM:
+        def __init__(self) -> None:
+            self.messages = None
+
+        def complete(self, messages):  # pragma: no cover
+            raise AssertionError("orchestrator should use complete_with_tools")
+
+        def complete_with_tools(self, messages, tools):
+            self.messages = messages
+            return {"role": "assistant", "content": "grounded answer", "tool_calls": []}
+
     recorder = RecordingLLM()
     app.dependency_overrides[get_llm_client] = lambda: recorder
     try:
@@ -146,29 +163,15 @@ def test_ask_passes_retrieved_context_to_llm(
     assert "Pro includes 25 seats." in user_content
     assert "What plans do you offer?" in user_content
     assert "plans.md" in user_content
-    assert NO_CONTEXT_INSTRUCTION not in user_content
 
 
-def test_ask_with_no_retrieval_results_still_calls_llm(
-    fake_llm: None,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    recorder = RecordingLLM()
-    monkeypatch.setattr("app.api.routes.retrieve", lambda question, **kwargs: [])
-    app.dependency_overrides[get_llm_client] = lambda: recorder
-    try:
-        response = client.post(
-            "/ask",
-            json={"question": "What is the capital of France?"},
-            headers={"X-API-Key": TEST_API_KEY},
-        )
-    finally:
-        app.dependency_overrides.pop(get_llm_client, None)
-
+def test_ask_with_no_retrieval_results_still_calls_llm(fake_llm: None) -> None:
+    response = client.post(
+        "/ask",
+        json={"question": "What is the capital of France?"},
+        headers={"X-API-Key": TEST_API_KEY},
+    )
     assert response.status_code == 200
     body = response.json()
     assert body["sources"] == []
     assert body["action"] == "answer"
-    assert recorder.messages is not None
-    assert NO_CONTEXT_INSTRUCTION in recorder.messages[1]["content"]
-    assert "What is the capital of France?" in recorder.messages[1]["content"]

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import httpx
 
 from app.llm.base import LLMError
@@ -24,9 +26,8 @@ class OpenAICompatibleClient:
         self._timeout = timeout
         self._http_client = http_client
 
-    def complete(self, messages: list[dict[str, str]]) -> str:
+    def _post(self, payload: dict[str, Any]) -> dict[str, Any]:
         url = f"{self._base_url}/chat/completions"
-        payload = {"model": self._model, "messages": messages}
         headers = {
             "Authorization": f"Bearer {self._api_key}",
             "Content-Type": "application/json",
@@ -47,11 +48,41 @@ class OpenAICompatibleClient:
             raise LLMError("Upstream LLM failed")
 
         try:
-            data = response.json()
+            return response.json()
+        except ValueError as exc:
+            raise LLMError("Upstream LLM failed") from exc
+
+    def complete(self, messages: list[dict[str, str]]) -> str:
+        data = self._post({"model": self._model, "messages": messages})
+        try:
             content = data["choices"][0]["message"]["content"]
-        except (KeyError, IndexError, TypeError, ValueError) as exc:
+        except (KeyError, IndexError, TypeError) as exc:
             raise LLMError("Upstream LLM failed") from exc
 
         if content is None or not str(content).strip():
             raise LLMError("Upstream LLM failed")
         return str(content).strip()
+
+    def complete_with_tools(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        data = self._post(
+            {
+                "model": self._model,
+                "messages": messages,
+                "tools": tools,
+            }
+        )
+        try:
+            message = data["choices"][0]["message"]
+        except (KeyError, IndexError, TypeError) as exc:
+            raise LLMError("Upstream LLM failed") from exc
+
+        if not isinstance(message, dict):
+            raise LLMError("Upstream LLM failed")
+        # A message must have either text content or at least one tool call.
+        if not message.get("content") and not message.get("tool_calls"):
+            raise LLMError("Upstream LLM failed")
+        return message

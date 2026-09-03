@@ -5,10 +5,14 @@ from fastapi.responses import JSONResponse
 
 from app.api.routes import router
 from app.core.config import settings
+from app.core.logging import configure_logging, request_logging_middleware
 from app.llm.base import LLMError
+
+configure_logging()
 
 app = FastAPI(title="Enterprise AI Customer Success Assistant")
 app.state.settings = settings
+app.middleware("http")(request_logging_middleware)
 app.include_router(router)
 
 
