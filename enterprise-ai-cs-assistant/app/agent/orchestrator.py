@@ -28,9 +28,18 @@ MAX_TOOL_ROUNDS = 3
 SYSTEM_PROMPT = (
     "You are an internal Customer Success assistant for CloudBoard, a B2B SaaS "
     "project-management product. Be concise and professional.\n\n"
-    "Answer product and plan questions only from the retrieved CloudBoard "
-    "documents supplied in the conversation. Do not invent product facts, "
-    "account data, refunds, contract terms, or tool results.\n\n"
+    "Answer product and plan questions ONLY using facts explicitly stated "
+    "in the retrieved CloudBoard documents supplied in the conversation.\n"
+    "Do not use general knowledge or assumptions.\n"
+    "Do not invent, infer, or combine unsupported pricing, plan names, "
+    "features, limits, or policies.\n"
+    "If the retrieved documents do not contain a requested detail, explicitly "
+    "say that the detail is not available in the retrieved documents.\n"
+    "Use the exact names, features, prices, limits, and other details stated "
+    "in the retrieved text. Do not infer, generalize, paraphrase into different "
+    "plan names, or use outside knowledge.\n"
+    "When describing plans, preserve the exact plan names, prices, features, "
+    "and limits stated in the retrieved documents.\n\n"
     "Use the lookup_account tool before answering any question that depends "
     "on a specific customer's plan, usage, or account status.\n\n"
     "Use the escalate_to_human tool, instead of answering yourself, for "
@@ -143,7 +152,7 @@ def handle_question(
     llm: LLMClient,
     customer_id: str | None = None,
 ) -> OrchestratorResult:
-    hits = retrieve(question)
+    hits = retrieve(question, n_results=20)
     sources = _unique_sources(hits)
 
     messages: list[dict[str, Any]] = [
