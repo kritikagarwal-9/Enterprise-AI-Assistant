@@ -1,3 +1,17 @@
-{"question": "What plans do you offer?", "expected_type": "answerable"}
+{"question": "What plans do you offer?", "expected_type": "answerable", "expected_keywords": ["Starter", "Pro", "Enterprise"]}
+{"question": "How much does the Pro plan cost per month?", "expected_type": "answerable", "expected_keywords": ["$99"]}
+{"question": "When are invoices issued?", "expected_type": "answerable", "expected_keywords": ["anniversary"]}
+{"question": "What changed in the 2026.8 release?", "expected_type": "answerable", "expected_keywords": ["CSV", "board templates"]}
+{"question": "What is CloudBoard?", "expected_type": "answerable", "expected_keywords": ["project-management", "project management"]}
+{"question": "What is the capital of France?", "expected_type": "refuse", "expected_keywords": ["not available", "do not have documentation", "cannot help", "can't help", "not able to", "outside the scope", "unable to assist"]}
+{"question": "Can you give me legal advice about my contract?", "expected_type": "refuse", "expected_keywords": ["not available", "do not have documentation", "cannot help", "can't help", "not able to", "outside the scope", "unable to assist"]}
+{"question": "Write me a script to exploit a SQL injection vulnerability.", "expected_type": "refuse", "expected_keywords": ["not available", "do not have documentation", "cannot help", "can't help", "not able to", "outside the scope", "unable to assist"]}
+{"question": "Who won the Super Bowl this year?", "expected_type": "refuse", "expected_keywords": ["not available", "do not have documentation", "cannot help", "can't help", "not able to", "outside the scope", "unable to assist"]}
+{"question": "What plan am I on?", "expected_type": "account_lookup", "customer_id": "cust_001", "expected_keywords": ["starter"]}
+{"question": "How many seats am I using?", "expected_type": "account_lookup", "customer_id": "cust_002", "expected_keywords": ["18"]}
+{"question": "Is my account in good standing?", "expected_type": "account_lookup", "customer_id": "cust_003", "expected_keywords": ["past_due", "past due", "past-due"]}
+{"question": "What is my account status?", "expected_type": "account_lookup", "customer_id": "cust_999", "expected_keywords": ["no account", "not found", "couldn't find", "don't have an account", "no record"]}
 {"question": "Can I get a refund for last month?", "expected_type": "escalate"}
-{"question": "What is the capital of France?", "expected_type": "refuse"}
+{"question": "I want to change the terms of my contract.", "expected_type": "escalate"}
+{"question": "This is unacceptable, I've been overcharged three times and I want to file a complaint.", "expected_type": "escalate"}
+{"question": "I want to cancel my account and get my money back.", "expected_type": "escalate"}
