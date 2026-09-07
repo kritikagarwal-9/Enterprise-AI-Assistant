@@ -10,3 +10,27 @@ jobs:
           python-version: "3.11"
       - run: pip install -r requirements.txt
       - run: pytest
+
+  docker:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: docker build -f docker/Dockerfile -t enterprise-ai-cs-assistant:ci .
+      - name: Start container
+        run: docker run -d --name ci-app -p 8000:8000 enterprise-ai-cs-assistant:ci
+      - name: Smoke test /health
+        run: |
+          for i in $(seq 1 10); do
+            if curl -sf http://localhost:8000/health; then
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "container did not become healthy in time"
+          docker logs ci-app
+          exit 1
+      - name: Stop container
+        if: always()
+        run: docker rm -f ci-app
