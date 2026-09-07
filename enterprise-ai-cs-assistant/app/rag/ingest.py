@@ -11,12 +11,36 @@ DEFAULT_DOCS_DIR = PROJECT_ROOT / "data" / "docs"
 MAX_CHUNK_CHARS = 800
 
 
+def _group_headings_with_content(paragraphs: list[str]) -> list[str]:
+    """Keep a run of Markdown heading-only paragraphs attached to the content
+    paragraph that follows them, so a heading like "## 2026.8" never ends up
+    as its own chunk disconnected from the text under it.
+    """
+    groups: list[str] = []
+    index = 0
+    while index < len(paragraphs):
+        paragraph = paragraphs[index]
+        if paragraph.startswith("#"):
+            group = [paragraph]
+            index += 1
+            while index < len(paragraphs) and paragraphs[index].startswith("#"):
+                group.append(paragraphs[index])
+                index += 1
+            if index < len(paragraphs):
+                group.append(paragraphs[index])
+                index += 1
+            groups.append("\n".join(group))
+        else:
+            groups.append(paragraph)
+            index += 1
+    return groups
+
+
 def chunk_text(text: str, source: str) -> list[dict[str, str]]:
-    paragraphs = [part.strip() for part in text.split("\n\n")]
+    paragraphs = [part.strip() for part in text.split("\n\n") if part.strip()]
+    grouped = _group_headings_with_content(paragraphs)
     chunks: list[dict[str, str]] = []
-    for paragraph in paragraphs:
-        if not paragraph:
-            continue
+    for paragraph in grouped:
         for piece in _split_long(paragraph, MAX_CHUNK_CHARS):
             chunks.append({"text": piece, "source": source})
     return chunks

@@ -175,3 +175,37 @@ def test_ask_with_no_retrieval_results_still_calls_llm(fake_llm: None) -> None:
     body = response.json()
     assert body["sources"] == []
     assert body["action"] == "answer"
+
+
+def test_ask_with_whitespace_only_question_returns_422() -> None:
+    response = client.post(
+        "/ask",
+        json={"question": "   "},
+        headers={"X-API-Key": TEST_API_KEY},
+    )
+    assert response.status_code == 422
+
+
+def test_ask_when_orchestrator_raises_unexpected_error_returns_clean_500(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def _boom(question, llm, customer_id=None):
+        raise RuntimeError("something unexpected broke")
+
+    monkeypatch.setattr("app.api.routes.handle_question", _boom)
+
+    # Starlette's ServerErrorMiddleware re-raises the original exception
+    # after sending the handler's response (so an ASGI server can still log
+    # it) -- the default TestClient would surface that as a raised
+    # exception in the test instead of a response. Real deployments still
+    # receive the clean 500 JSON before that re-raise happens; this client
+    # is configured to observe that response the same way a real client
+    # would.
+    no_raise_client = TestClient(app, raise_server_exceptions=False)
+    response = no_raise_client.post(
+        "/ask",
+        json={"question": "What plans do you offer?"},
+        headers={"X-API-Key": TEST_API_KEY},
+    )
+    assert response.status_code == 500
+    assert response.json() == {"detail": "Internal server error"}

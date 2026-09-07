@@ -3,7 +3,9 @@
 import json
 from pathlib import Path
 
-from app.tools.account_lookup import lookup_account
+import pytest
+
+from app.tools.account_lookup import AccountLookupError, lookup_account
 
 
 def test_lookup_cust_001() -> None:
@@ -49,3 +51,16 @@ def test_lookup_uses_custom_data_path(tmp_path: Path) -> None:
     assert result is not None
     assert result["plan"] == "enterprise"
     assert lookup_account("cust_001", data_path=custom) is None
+
+
+def test_lookup_raises_account_lookup_error_on_corrupt_json(tmp_path: Path) -> None:
+    corrupt = tmp_path / "customers.json"
+    corrupt.write_text("{not valid json", encoding="utf-8")
+    with pytest.raises(AccountLookupError):
+        lookup_account("cust_001", data_path=corrupt)
+
+
+def test_lookup_raises_account_lookup_error_on_missing_file(tmp_path: Path) -> None:
+    missing = tmp_path / "does_not_exist.json"
+    with pytest.raises(AccountLookupError):
+        lookup_account("cust_001", data_path=missing)

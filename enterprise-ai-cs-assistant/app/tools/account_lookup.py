@@ -10,6 +10,10 @@ DEFAULT_CUSTOMERS_PATH = (
 )
 
 
+class AccountLookupError(Exception):
+    """Raised when the mock customer data can't be read or is malformed."""
+
+
 def lookup_account(
     customer_id: str,
     data_path: Path | None = None,
@@ -18,14 +22,17 @@ def lookup_account(
         return None
 
     path = data_path or DEFAULT_CUSTOMERS_PATH
-    customers = json.loads(path.read_text(encoding="utf-8"))
-    wanted = customer_id.strip()
-    for customer in customers:
-        if customer.get("customer_id") == wanted:
-            return {
-                "customer_id": customer["customer_id"],
-                "plan": customer["plan"],
-                "status": customer["status"],
-                "usage": customer["usage"],
-            }
-    return None
+    try:
+        customers = json.loads(path.read_text(encoding="utf-8"))
+        wanted = customer_id.strip()
+        for customer in customers:
+            if customer.get("customer_id") == wanted:
+                return {
+                    "customer_id": customer["customer_id"],
+                    "plan": customer["plan"],
+                    "status": customer["status"],
+                    "usage": customer["usage"],
+                }
+        return None
+    except (OSError, json.JSONDecodeError, KeyError, TypeError, AttributeError) as exc:
+        raise AccountLookupError(f"account data unavailable: {exc}") from exc

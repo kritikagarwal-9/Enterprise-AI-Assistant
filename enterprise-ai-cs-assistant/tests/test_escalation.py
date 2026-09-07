@@ -1,9 +1,12 @@
 """Unit tests for the mock escalation/ticketing tool."""
 
 import json
+import logging
 from pathlib import Path
 
-from app.tools.escalation import create_ticket
+import pytest
+
+from app.tools.escalation import TicketCreationError, create_ticket
 
 
 def test_create_ticket_writes_and_returns_record(tmp_path: Path) -> None:
@@ -35,3 +38,28 @@ def test_create_ticket_normalizes_unknown_reason(tmp_path: Path) -> None:
     path = tmp_path / "tickets.json"
     ticket = create_ticket(reason="not_a_real_reason", summary="x", data_path=path)
     assert ticket["reason"] == "other"
+
+
+def test_create_ticket_raises_on_write_failure(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    path = tmp_path / "tickets.json"
+
+    def _boom(self, *args, **kwargs):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(Path, "write_text", _boom)
+    with pytest.raises(TicketCreationError):
+        create_ticket(reason="complaint", summary="x", data_path=path)
+
+
+def test_create_ticket_logs_warning_on_corrupt_existing_file(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    path = tmp_path / "tickets.json"
+    path.write_text("{not valid json", encoding="utf-8")
+
+    with caplog.at_level(logging.WARNING, logger="app"):
+        create_ticket(reason="complaint", summary="x", data_path=path)
+
+    assert any("tickets_file_corrupt" in record.message for record in caplog.records)

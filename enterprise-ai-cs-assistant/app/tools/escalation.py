@@ -12,11 +12,17 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
+from app.core.logging import logger
+
 DEFAULT_TICKETS_PATH = (
     Path(__file__).resolve().parents[2] / "data" / "mock" / "tickets.json"
 )
 
 VALID_REASONS = {"billing_dispute", "contract_issue", "complaint", "other"}
+
+
+class TicketCreationError(Exception):
+    """Raised when a ticket can't be persisted (e.g. filesystem failure)."""
 
 
 def create_ticket(
@@ -42,12 +48,23 @@ def create_ticket(
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
 
-    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        raise TicketCreationError(f"could not create tickets directory: {exc}") from exc
+
     try:
         existing = json.loads(path.read_text(encoding="utf-8")) if path.exists() else []
     except json.JSONDecodeError:
+        logger.warning(
+            json.dumps({"event": "tickets_file_corrupt", "path": str(path)})
+        )
         existing = []
+
     existing.append(ticket)
-    path.write_text(json.dumps(existing, indent=2), encoding="utf-8")
+    try:
+        path.write_text(json.dumps(existing, indent=2), encoding="utf-8")
+    except OSError as exc:
+        raise TicketCreationError(f"could not write ticket: {exc}") from exc
 
     return ticket

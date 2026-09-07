@@ -42,8 +42,8 @@ def try_get_collection(
     persist_path: Path | None = None,
     collection_name: str = COLLECTION_NAME,
 ):
-    client = get_client(persist_path)
     try:
+        client = get_client(persist_path)
         return client.get_collection(collection_name)
     except Exception:
         return None

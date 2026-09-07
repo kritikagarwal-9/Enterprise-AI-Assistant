@@ -20,8 +20,8 @@ from typing import Any
 
 from app.llm.base import LLMClient
 from app.rag.retrieve import retrieve
-from app.tools.account_lookup import lookup_account
-from app.tools.escalation import create_ticket
+from app.tools.account_lookup import AccountLookupError, lookup_account
+from app.tools.escalation import TicketCreationError, create_ticket
 
 MAX_TOOL_ROUNDS = 3
 
@@ -42,10 +42,15 @@ SYSTEM_PROMPT = (
     "and limits stated in the retrieved documents.\n\n"
     "Use the lookup_account tool before answering any question that depends "
     "on a specific customer's plan, usage, or account status.\n\n"
-    "Use the escalate_to_human tool, instead of answering yourself, for "
-    "billing disputes, refund requests, contract changes, or complaints. "
+    "Use the escalate_to_human tool, instead of answering yourself, ONLY for "
+    "an existing customer's own billing dispute, refund request, change to "
+    "their contract terms, or complaint about their account. "
     "Do not attempt to resolve these yourself even if you believe you know "
-    "the answer."
+    "the answer.\n\n"
+    "Do NOT use escalate_to_human, and do not answer, for requests for legal "
+    "advice, requests to write exploit code or other security attacks, or "
+    "questions unrelated to CloudBoard (e.g. general trivia). These are out "
+    "of scope: refuse them directly and say so explicitly."
 )
 
 NO_CONTEXT_INSTRUCTION = (
@@ -73,8 +78,11 @@ TOOLS: list[dict[str, Any]] = [
             "name": "escalate_to_human",
             "description": (
                 "Create a support ticket and hand off to a human Customer "
-                "Success Manager. Use for billing disputes, refund requests, "
-                "contract changes, or complaints."
+                "Success Manager. Use ONLY for an existing customer's own "
+                "billing dispute, refund request, contract-term change, or "
+                "complaint about their account. Do not use this for general "
+                "requests for legal advice, security/exploit requests, or "
+                "off-topic questions -- refuse those directly instead."
             ),
             "parameters": {
                 "type": "object",
@@ -133,7 +141,10 @@ def _run_tool(name: str, arguments: dict[str, Any], customer_id: str | None) -> 
                 json.dumps({"error": "no customer_id was provided for this conversation"}),
                 None,
             )
-        account = lookup_account(customer_id)
+        try:
+            account = lookup_account(customer_id)
+        except AccountLookupError as exc:
+            return json.dumps({"error": str(exc)}), None
         if account is None:
             return json.dumps({"error": f"no account found for {customer_id}"}), None
         return json.dumps(account), None
@@ -185,7 +196,18 @@ def handle_question(
             except json.JSONDecodeError:
                 arguments = {}
 
-            result_text, maybe_ticket_id = _run_tool(name, arguments, customer_id)
+            try:
+                result_text, maybe_ticket_id = _run_tool(name, arguments, customer_id)
+            except TicketCreationError:
+                return OrchestratorResult(
+                    answer=(
+                        "I was not able to finish handling this request. "
+                        "Please escalate manually."
+                    ),
+                    action=action,
+                    sources=sources,
+                    ticket_id=ticket_id,
+                )
             if name == "lookup_account":
                 action = "answer_with_account_context"
             if maybe_ticket_id:

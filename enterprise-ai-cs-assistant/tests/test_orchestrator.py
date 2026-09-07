@@ -5,6 +5,8 @@ from typing import Any
 import pytest
 
 from app.agent import orchestrator
+from app.tools.account_lookup import AccountLookupError
+from app.tools.escalation import TicketCreationError
 
 
 class ScriptedLLM:
@@ -131,4 +133,67 @@ def test_runaway_tool_loop_fails_safe(monkeypatch: pytest.MonkeyPatch) -> None:
     result = orchestrator.handle_question(
         "loop question", llm=llm, customer_id="cust_001"
     )
+    assert "escalate manually" in result.answer.lower()
+
+
+def test_system_prompt_tells_model_to_refuse_not_escalate_legal_advice() -> None:
+    """Regression guard for the eval-discovered bug where a legal-advice
+    question was escalated instead of refused. Prompt wording isn't
+    deterministically testable against a real LLM in pytest, so this locks
+    in that the guardrail text exists; real behavior is confirmed by
+    eval/run_eval.py.
+    """
+    assert "legal advice" in orchestrator.SYSTEM_PROMPT.lower()
+    assert "do not use escalate_to_human" in orchestrator.SYSTEM_PROMPT.lower()
+
+    escalate_tool = next(
+        tool
+        for tool in orchestrator.TOOLS
+        if tool["function"]["name"] == "escalate_to_human"
+    )
+    assert "legal advice" in escalate_tool["function"]["description"].lower()
+
+
+def test_lookup_account_error_returns_error_to_model_instead_of_crashing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def _boom(customer_id: str) -> dict:
+        raise AccountLookupError("account data unavailable: corrupt file")
+
+    monkeypatch.setattr(orchestrator, "lookup_account", _boom)
+    llm = ScriptedLLM(
+        [
+            _tool_call("call_1", "lookup_account", {}),
+            _final("I couldn't look up your account right now."),
+        ]
+    )
+    result = orchestrator.handle_question(
+        "What plan am I on?", llm=llm, customer_id="cust_001"
+    )
+    assert result.action == "answer_with_account_context"
+    tool_result_message = llm.calls[1][-1]
+    assert "error" in tool_result_message["content"]
+
+
+def test_ticket_creation_error_fails_safe_without_escalating(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def _boom(reason: str, summary: str, customer_id: str | None = None) -> dict:
+        raise TicketCreationError("disk full")
+
+    monkeypatch.setattr(orchestrator, "create_ticket", _boom)
+    llm = ScriptedLLM(
+        [
+            _tool_call(
+                "call_1",
+                "escalate_to_human",
+                {"reason": "billing_dispute", "summary": "Charged twice."},
+            ),
+        ]
+    )
+    result = orchestrator.handle_question(
+        "I was charged twice.", llm=llm, customer_id="cust_001"
+    )
+    assert result.action == "answer"
+    assert result.ticket_id is None
     assert "escalate manually" in result.answer.lower()
