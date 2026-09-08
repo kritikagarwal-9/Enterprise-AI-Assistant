@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     llm_model: str = "openai/gpt-oss-20b"
     llm_base_url: str = ""
     api_auth_key: str = ""
+    customer_api_keys: str = ""
     chroma_path: str = "chroma_db"
 
 

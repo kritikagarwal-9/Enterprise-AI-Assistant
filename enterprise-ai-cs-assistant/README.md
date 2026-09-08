@@ -27,3 +27,30 @@ plan is approved.
 - eval         test questions used to check answer quality
 - tests        unit and integration tests
 - docker       Dockerfile
+
+## Security
+
+Secrets (`LLM_API_KEY`, `API_AUTH_KEY`, `CUSTOMER_API_KEYS`) are configured
+only via environment variables. Locally that's `.env` (never committed,
+see `.gitignore`); in production they're set directly in Render's
+dashboard, injected into the container at runtime, and never baked into
+the Docker image.
+
+There are two API key types, both sent via the `X-API-Key` header:
+
+- **Staff key (`API_AUTH_KEY`)** — unrestricted. This app is an *internal*
+  CS-team tool, and staff legitimately look up different customers all
+  day, so this key intentionally has no per-customer restriction.
+- **Customer-scoped keys (`CUSTOMER_API_KEYS`)** — the mechanism for when
+  a caller must be restricted to exactly one customer. Format:
+  `key1:cust_001,key2:cust_002` (comma-separated `key:customer_id` pairs).
+  A request authenticated with one of these keys is bound to that
+  `customer_id`: it's used automatically if the request omits
+  `customer_id`, and the request is rejected (`403`) if it names a
+  different one. This is not a general permissions system — it enforces
+  exactly that one boundary.
+
+To rotate either key type: change the value in Render's dashboard and
+redeploy. There is currently no rate limiting on `/ask` — accepted as a
+reasonable tradeoff given this project's scale (single shared staff key,
+low traffic, no external infrastructure).

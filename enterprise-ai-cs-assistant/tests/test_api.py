@@ -17,6 +17,8 @@ from app.main import app
 client = TestClient(app)
 
 TEST_API_KEY = "test-local-api-key"
+TEST_CUSTOMER_KEY = "test-customer-key"
+TEST_CUSTOMER_ID = "cust_001"
 
 
 class FakeLLM:
@@ -48,6 +50,14 @@ def set_api_auth_key() -> None:
 @pytest.fixture(autouse=True)
 def mock_retrieve(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("app.agent.orchestrator.retrieve", lambda question, n_results=4: [])
+
+
+@pytest.fixture
+def customer_scoped_key() -> None:
+    original = settings.customer_api_keys
+    settings.customer_api_keys = f"{TEST_CUSTOMER_KEY}:{TEST_CUSTOMER_ID}"
+    yield
+    settings.customer_api_keys = original
 
 
 @pytest.fixture
@@ -209,3 +219,70 @@ def test_ask_when_orchestrator_raises_unexpected_error_returns_clean_500(
     )
     assert response.status_code == 500
     assert response.json() == {"detail": "Internal server error"}
+
+
+def test_ask_with_staff_key_allows_any_customer_id(fake_llm: None) -> None:
+    response = client.post(
+        "/ask",
+        json={"question": "What plans do you offer?", "customer_id": "cust_999"},
+        headers={"X-API-Key": TEST_API_KEY},
+    )
+    assert response.status_code == 200
+
+
+def test_ask_with_customer_scoped_key_and_matching_customer_id_works(
+    fake_llm: None, customer_scoped_key: None
+) -> None:
+    response = client.post(
+        "/ask",
+        json={"question": "What plans do you offer?", "customer_id": TEST_CUSTOMER_ID},
+        headers={"X-API-Key": TEST_CUSTOMER_KEY},
+    )
+    assert response.status_code == 200
+
+
+def test_ask_with_customer_scoped_key_and_mismatched_customer_id_returns_403(
+    fake_llm: None, customer_scoped_key: None
+) -> None:
+    response = client.post(
+        "/ask",
+        json={"question": "What plans do you offer?", "customer_id": "cust_002"},
+        headers={"X-API-Key": TEST_CUSTOMER_KEY},
+    )
+    assert response.status_code == 403
+    assert response.json()["detail"] == "Not authorized for this customer_id"
+
+
+def test_ask_with_customer_scoped_key_and_omitted_customer_id_autofills(
+    customer_scoped_key: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    captured: dict = {}
+
+    def _spy(question, llm, customer_id=None):
+        captured["customer_id"] = customer_id
+        return type(
+            "Result",
+            (),
+            {"answer": "fake answer", "action": "answer", "sources": [], "ticket_id": None},
+        )()
+
+    monkeypatch.setattr("app.api.routes.handle_question", _spy)
+
+    response = client.post(
+        "/ask",
+        json={"question": "What plans do you offer?"},
+        headers={"X-API-Key": TEST_CUSTOMER_KEY},
+    )
+    assert response.status_code == 200
+    assert captured["customer_id"] == TEST_CUSTOMER_ID
+
+
+def test_ask_with_unknown_key_returns_401_even_with_customer_keys_configured(
+    customer_scoped_key: None,
+) -> None:
+    response = client.post(
+        "/ask",
+        json={"question": "What plans do you offer?"},
+        headers={"X-API-Key": "some-other-key"},
+    )
+    assert response.status_code == 401
