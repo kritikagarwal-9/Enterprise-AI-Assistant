@@ -33,6 +33,7 @@ async def request_logging_middleware(
     call_next: Callable[[Request], Awaitable[Response]],
 ) -> Response:
     request_id = uuid.uuid4().hex[:12]
+    request.state.request_id = request_id
     start = time.perf_counter()
     response = await call_next(request)
     duration_ms = round((time.perf_counter() - start) * 1000, 1)

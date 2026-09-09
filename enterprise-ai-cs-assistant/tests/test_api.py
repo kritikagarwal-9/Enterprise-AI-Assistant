@@ -6,6 +6,8 @@ refusal) is covered in tests/test_orchestrator.py, so the fakes here just
 need to exercise a plain answer, a failure, and an unconfigured LLM.
 """
 
+import logging
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -286,3 +288,57 @@ def test_ask_with_unknown_key_returns_401_even_with_customer_keys_configured(
         headers={"X-API-Key": "some-other-key"},
     )
     assert response.status_code == 401
+
+
+def test_ask_success_includes_request_id_header(fake_llm: None) -> None:
+    response = client.post(
+        "/ask",
+        json={"question": "What plans do you offer?"},
+        headers={"X-API-Key": TEST_API_KEY},
+    )
+    assert response.status_code == 200
+    assert response.headers.get("X-Request-ID")
+
+
+def test_ask_unhandled_error_response_and_log_share_request_id(
+    monkeypatch: pytest.MonkeyPatch,
+    fake_llm: None,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    def _boom(question, llm, customer_id=None):
+        raise RuntimeError("something unexpected broke")
+
+    monkeypatch.setattr("app.api.routes.handle_question", _boom)
+
+    # See test_ask_when_orchestrator_raises_unexpected_error_returns_clean_500
+    # for why raise_server_exceptions=False is needed here.
+    no_raise_client = TestClient(app, raise_server_exceptions=False)
+    with caplog.at_level(logging.ERROR, logger="app"):
+        response = no_raise_client.post(
+            "/ask",
+            json={"question": "What plans do you offer?"},
+            headers={"X-API-Key": TEST_API_KEY},
+        )
+
+    assert response.status_code == 500
+    request_id = response.headers.get("X-Request-ID")
+    assert request_id
+    assert any(request_id in record.message for record in caplog.records)
+
+
+def test_ask_with_question_over_max_length_returns_422(fake_llm: None) -> None:
+    response = client.post(
+        "/ask",
+        json={"question": "a" * 4001},
+        headers={"X-API-Key": TEST_API_KEY},
+    )
+    assert response.status_code == 422
+
+
+def test_ask_with_question_at_max_length_is_accepted(fake_llm: None) -> None:
+    response = client.post(
+        "/ask",
+        json={"question": "a" * 4000},
+        headers={"X-API-Key": TEST_API_KEY},
+    )
+    assert response.status_code == 200

@@ -12,7 +12,7 @@ router = APIRouter()
 
 
 class AskRequest(BaseModel):
-    question: str = Field(min_length=1)
+    question: str = Field(min_length=1, max_length=4000)
     customer_id: str | None = None
 
     @field_validator("question")

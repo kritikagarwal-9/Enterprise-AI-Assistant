@@ -27,10 +27,12 @@ def llm_error_handler(_request: Request, exc: LLMError) -> JSONResponse:
 
 @app.exception_handler(Exception)
 def unhandled_error_handler(request: Request, exc: Exception) -> JSONResponse:
+    request_id = getattr(request.state, "request_id", None)
     logger.error(
         json.dumps(
             {
                 "event": "unhandled_exception",
+                "request_id": request_id,
                 "path": request.url.path,
                 "method": request.method,
                 "exception_type": type(exc).__name__,
@@ -38,7 +40,10 @@ def unhandled_error_handler(request: Request, exc: Exception) -> JSONResponse:
             }
         )
     )
-    return JSONResponse(status_code=500, content={"detail": "Internal server error"})
+    response = JSONResponse(status_code=500, content={"detail": "Internal server error"})
+    if request_id:
+        response.headers["X-Request-ID"] = request_id
+    return response
 
 
 @app.get("/health")
