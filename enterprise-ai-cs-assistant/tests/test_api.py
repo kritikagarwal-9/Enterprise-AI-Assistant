@@ -187,7 +187,7 @@ def test_ask_with_no_retrieval_results_still_calls_llm(fake_llm: None) -> None:
     assert body["action"] == "answer"
 
 
-def test_ask_with_whitespace_only_question_returns_422() -> None:
+def test_ask_with_whitespace_only_question_returns_422(fake_llm: None) -> None:
     response = client.post(
         "/ask",
         json={"question": "   "},
@@ -197,7 +197,7 @@ def test_ask_with_whitespace_only_question_returns_422() -> None:
 
 
 def test_ask_when_orchestrator_raises_unexpected_error_returns_clean_500(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, fake_llm: None
 ) -> None:
     def _boom(question, llm, customer_id=None):
         raise RuntimeError("something unexpected broke")
@@ -254,7 +254,7 @@ def test_ask_with_customer_scoped_key_and_mismatched_customer_id_returns_403(
 
 
 def test_ask_with_customer_scoped_key_and_omitted_customer_id_autofills(
-    customer_scoped_key: None, monkeypatch: pytest.MonkeyPatch
+    customer_scoped_key: None, monkeypatch: pytest.MonkeyPatch, fake_llm: None
 ) -> None:
     captured: dict = {}
 
