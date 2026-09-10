@@ -14,6 +14,7 @@ can't do on its own, human-in-the-loop escalation, an evaluation harness,
 structured logging, Docker packaging, CI, and deployment.
 
 **Live deployment:** https://enterprise-ai-assistant-s76o.onrender.com/
+
 **API docs (Swagger UI):** https://enterprise-ai-assistant-s76o.onrender.com/docs
 
 ## What the assistant can do
